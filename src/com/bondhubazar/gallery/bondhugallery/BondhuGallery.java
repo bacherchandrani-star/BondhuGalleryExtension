@@ -9,7 +9,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Gravity;
 import android.view.MotionEvent;
-
+import android.view.WindowManager;
 // Android Layout এবং Widget
 import android.widget.LinearLayout;
 import android.widget.FrameLayout;
@@ -387,9 +387,9 @@ public class BondhuGallery extends AndroidNonvisibleComponent {
                 window.setBackgroundDrawableResource(
                         android.R.color.transparent
                 );
-                window.setLayout(
-                        Window.LayoutParams.MATCH_PARENT,
-                        Window.LayoutParams.WRAP_CONTENT
+              window.setLayout(
+        WindowManager.LayoutParams.MATCH_PARENT,
+        WindowManager.LayoutParams.WRAP_CONTENT
                 );
             }
 
