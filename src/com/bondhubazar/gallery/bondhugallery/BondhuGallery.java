@@ -1,42 +1,36 @@
-
 package com.bondhubazar.gallery.bondhugallery;
 
-// Android Context
+// Android Context এবং UI
 import android.content.Context;
-
-// Dialog
+import android.content.DialogInterface;
 import android.app.Dialog;
 import android.view.Window;
-
-// Android View
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Gravity;
+import android.view.MotionEvent;
 
-// Layout
+// Android Layout এবং Widget
 import android.widget.LinearLayout;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
-
-// Button
 import android.widget.Button;
 
-// Image
+// Android Graphics
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-
-// Background
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 
-// Touch Gesture
-import android.view.MotionEvent;
+// Background Thread এবং Main Thread
+import android.os.Handler;
+import android.os.Looper;
 
 // Internet
 import java.net.URL;
 import java.net.HttpURLConnection;
 
-// Thread
+// List
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,533 +47,335 @@ import com.google.appinventor.components.runtime.util.YailList;
     description = "Bondhu Bazar Product Image Gallery",
     version = 1
 )
-
-public class BondhuGallery
-        extends AndroidNonvisibleComponent {
+public class BondhuGallery extends AndroidNonvisibleComponent {
 
     // Android Context
-    private Context context;
+    private final Context context;
 
-    // Gallery Dialog
+    // Main Thread Handler
+    private final Handler mainHandler =
+            new Handler(Looper.getMainLooper());
+
+    // Gallery Dialog এবং UI Views
     private Dialog dialog;
-
-    // Gallery Image
+    private LinearLayout mainLayout;
     private ImageView imageView;
-
-    // Title
     private TextView titleView;
-
-    // Image Counter
     private TextView counterView;
 
-    // Image URL List
-    private List<String> imageUrls = new ArrayList<>();
+    // ছবির URL List
+    private final List<String> imageUrls =
+            new ArrayList<String>();
 
-    // বর্তমান ছবির Index
+    // বর্তমানে যে ছবিটি দেখানো হচ্ছে তার Index
     private int currentIndex = 0;
 
     // Gallery Title
     private String galleryTitle = "Product Gallery";
 
-    // Background Color
+    // Gallery Background Color
     private int backgroundColor = Color.WHITE;
 
-    // Swipe-এর প্রথম X Position
+    // Swipe Gesture-এর অবস্থান
     private float startX = 0;
-
-    // Swipe-এর প্রথম Y Position
     private float startY = 0;
-
-    // Swipe Distance
     private int swipeThreshold = 80;
+
+    // পুরনো Image Download Request বাতিল/উপেক্ষা করার Counter
+    private int imageRequestId = 0;
 
     // Constructor
     public BondhuGallery(ComponentContainer container) {
-
         super(container.$form());
-
-        // Context নেওয়া
         context = container.$context();
     }
 
     // =========================================
-    // ১. Gallery-এর ছবিগুলি সেট করা
+    // ১. Gallery-এর ছবির URL সেট করা
     // =========================================
-
-    @SimpleFunction(
-        description = "Gallery-এর Image URL List সেট করুন"
-    )
+    @SimpleFunction(description = "Gallery-এর Image URL List সেট করুন")
     public void SetImages(YailList urls) {
-
         try {
-
-            // পুরনো Image List মুছে ফেলা
             imageUrls.clear();
 
-            // App Inventor List থেকে URL নেওয়া
-            for (Object item : urls.toArray()) {
+            if (urls == null) {
+                ErrorOccurred("SetImages: Image List খালি");
+                return;
+            }
 
-                String url = String.valueOf(item);
+            Object[] items = urls.toArray();
 
-                // খালি URL বাদ দেওয়া
-                if (!url.trim().isEmpty()) {
+            for (Object item : items) {
+                if (item == null) {
+                    continue;
+                }
 
+                String url = String.valueOf(item).trim();
+
+                if (!url.isEmpty()) {
                     imageUrls.add(url);
                 }
             }
 
-        } catch (Exception e) {
+            currentIndex = 0;
 
-            ErrorOccurred(
-                "SetImages: " + e.getMessage()
-            );
+        } catch (Exception e) {
+            ErrorOccurred("SetImages: " + getErrorMessage(e));
         }
     }
 
     // =========================================
     // ২. Gallery Title সেট করা
     // =========================================
-
-    @SimpleFunction(
-        description = "Gallery-এর Title সেট করুন"
-    )
+    @SimpleFunction(description = "Gallery-এর Title সেট করুন")
     public void SetGalleryTitle(String title) {
+        galleryTitle = (title == null) ? "" : title;
 
-        galleryTitle = title;
-
-        // Dialog খোলা থাকলে Title Update
         if (titleView != null) {
-
-            titleView.setText(title);
+            titleView.setText(galleryTitle);
         }
     }
 
     // =========================================
     // ৩. Background Color সেট করা
     // =========================================
-
-    @SimpleFunction(
-        description = "Gallery Background Color সেট করুন"
-    )
+    @SimpleFunction(description = "Gallery Background Color সেট করুন, যেমন #FFFFFF")
     public void SetBackgroundColor(String colorCode) {
-
         try {
-
             backgroundColor = Color.parseColor(colorCode);
 
-            if (dialog != null && dialog.isShowing()) {
+            if (mainLayout != null) {
+                mainLayout.setBackgroundColor(backgroundColor);
+            }
 
-                dialog.getWindow()
-                        .getDecorView()
-                        .setBackgroundColor(backgroundColor);
+            if (imageView != null) {
+                imageView.setBackgroundColor(backgroundColor);
             }
 
         } catch (Exception e) {
-
-            ErrorOccurred(
-                "SetBackgroundColor: " + e.getMessage()
-            );
+            ErrorOccurred("SetBackgroundColor: " + getErrorMessage(e));
         }
     }
 
     // =========================================
-    // ৪. Gallery Show করা
+    // ৪. Swipe-এর Minimum Distance সেট করা
     // =========================================
+    @SimpleFunction(description = "Swipe করার Minimum Distance DP-তে সেট করুন")
+    public void SetSwipeThreshold(int distance) {
+        if (distance > 0) {
+            swipeThreshold = distance;
+        }
+    }
 
-    @SimpleFunction(
-        description = "Product Image Gallery খুলুন"
-    )
+    // =========================================
+    // ৫. Gallery খুলুন
+    // =========================================
+    @SimpleFunction(description = "Product Image Gallery খুলুন")
     public void ShowGallery() {
-
         try {
-
-            // Image না থাকলে
             if (imageUrls.isEmpty()) {
-
-                ErrorOccurred("Gallery-তে কোনো Image নেই");
-
+                ErrorOccurred("Gallery-তে কোনো Image URL নেই");
                 return;
             }
 
-            // পুরনো Dialog বন্ধ
+            // আগের Gallery খোলা থাকলে বন্ধ করুন
             CloseGallery();
 
-            // Index শূন্য থেকে শুরু
             currentIndex = 0;
 
-            // Dialog তৈরি
             dialog = new Dialog(context);
-
-            // Dialog Title Bar বাদ
-            dialog.requestWindowFeature(
-                    Window.FEATURE_NO_TITLE
-            );
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
             // Main Layout
-            LinearLayout mainLayout =
-                    new LinearLayout(context);
+            mainLayout = new LinearLayout(context);
+            mainLayout.setOrientation(LinearLayout.VERTICAL);
+            mainLayout.setPadding(dp(12), dp(12), dp(12), dp(12));
+            mainLayout.setBackgroundColor(backgroundColor);
 
-            // Vertical Layout
-            mainLayout.setOrientation(
-                    LinearLayout.VERTICAL
-            );
+            // -------------------------------------
+            // Header
+            // -------------------------------------
+            LinearLayout header = new LinearLayout(context);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(Gravity.CENTER_VERTICAL);
 
-            // Background Color
-            mainLayout.setBackgroundColor(
-                    backgroundColor
-            );
-
-            // Padding
-            mainLayout.setPadding(
-                    dp(12),
-                    dp(12),
-                    dp(12),
-                    dp(12)
-            );
-
-            // =================================
-            // Header Layout
-            // =================================
-
-            LinearLayout header =
-                    new LinearLayout(context);
-
-            header.setOrientation(
-                    LinearLayout.HORIZONTAL
-            );
-
-            header.setGravity(
-                    Gravity.CENTER_VERTICAL
-            );
-
-            // Title
             titleView = new TextView(context);
-
             titleView.setText(galleryTitle);
-
-            titleView.setTextColor(
-                    Color.parseColor("#222222")
-            );
-
+            titleView.setTextColor(Color.parseColor("#222222"));
             titleView.setTextSize(18);
-
             titleView.setTypeface(
                     null,
                     android.graphics.Typeface.BOLD
             );
 
-            // Title Layout
             LinearLayout.LayoutParams titleParams =
                     new LinearLayout.LayoutParams(
                             0,
                             dp(48),
                             1
                     );
-
             titleView.setLayoutParams(titleParams);
 
-            // Close Button
-            Button closeButton =
-                    new Button(context);
-
+            Button closeButton = new Button(context);
             closeButton.setText("✕");
-
             closeButton.setTextSize(18);
-
             closeButton.setTextColor(Color.WHITE);
+            closeButton.setBackgroundColor(Color.parseColor("#2E7D32"));
 
-            closeButton.setBackgroundColor(
-                    Color.parseColor("#2E7D32")
-            );
-
-            // Close Button Layout
             LinearLayout.LayoutParams closeParams =
-                    new LinearLayout.LayoutParams(
-                            dp(48),
-                            dp(48)
-                    );
+                    new LinearLayout.LayoutParams(dp(48), dp(48));
+            closeButton.setLayoutParams(closeParams);
 
-            closeButton.setLayoutParams(
-                    closeParams
-            );
-
-            // Header-এ Title যোগ
             header.addView(titleView);
-
-            // Header-এ Close Button যোগ
             header.addView(closeButton);
-
-            // Main Layout-এ Header যোগ
             mainLayout.addView(header);
 
-            // =================================
+            // -------------------------------------
             // Image Area
-            // =================================
+            // -------------------------------------
+            FrameLayout imageFrame = new FrameLayout(context);
 
-            FrameLayout imageFrame =
-                    new FrameLayout(context);
-
-            // ImageView
             imageView = new ImageView(context);
+            imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            imageView.setBackgroundColor(backgroundColor);
 
-            // Image Fit
-            imageView.setScaleType(
-                    ImageView.ScaleType.FIT_CENTER
-            );
-
-            // Image Background
-            imageView.setBackgroundColor(
-                    backgroundColor
-            );
-
-            // Image Layout
             FrameLayout.LayoutParams imageParams =
                     new FrameLayout.LayoutParams(
-                            ViewGroupSize.MATCH,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
                             dp(360),
                             Gravity.CENTER
                     );
+            imageView.setLayoutParams(imageParams);
 
-            imageView.setLayoutParams(
-                    imageParams
-            );
-
-            // Frame-এ Image যোগ
             imageFrame.addView(imageView);
 
-            // Image Area Layout
             LinearLayout.LayoutParams frameParams =
                     new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             dp(360)
                     );
-
             frameParams.topMargin = dp(10);
+            imageFrame.setLayoutParams(frameParams);
 
-            imageFrame.setLayoutParams(
-                    frameParams
-            );
-
-            // Main Layout-এ Image Area যোগ
             mainLayout.addView(imageFrame);
 
-            // =================================
+            // -------------------------------------
             // Image Counter
-            // =================================
-
+            // -------------------------------------
             counterView = new TextView(context);
-
-            counterView.setTextColor(
-                    Color.parseColor("#555555")
-            );
-
+            counterView.setTextColor(Color.parseColor("#555555"));
             counterView.setTextSize(14);
-
-            counterView.setGravity(
-                    Gravity.CENTER
-            );
-
-            counterView.setPadding(
-                    0,
-                    dp(12),
-                    0,
-                    dp(8)
-            );
-
+            counterView.setGravity(Gravity.CENTER);
+            counterView.setPadding(0, dp(12), 0, dp(8));
             mainLayout.addView(counterView);
 
-            // =================================
-            // Navigation Buttons
-            // =================================
+            // -------------------------------------
+            // Previous এবং Next Button
+            // -------------------------------------
+            LinearLayout navigation = new LinearLayout(context);
+            navigation.setOrientation(LinearLayout.HORIZONTAL);
+            navigation.setGravity(Gravity.CENTER);
 
-            LinearLayout navigation =
-                    new LinearLayout(context);
-
-            navigation.setOrientation(
-                    LinearLayout.HORIZONTAL
-            );
-
-            navigation.setGravity(
-                    Gravity.CENTER
-            );
-
-            // Previous Button
-            Button previousButton =
-                    new Button(context);
-
+            Button previousButton = new Button(context);
             previousButton.setText("◀");
 
-            // Next Button
-            Button nextButton =
-                    new Button(context);
-
+            Button nextButton = new Button(context);
             nextButton.setText("▶");
 
-            // Button Color
             previousButton.setTextColor(Color.WHITE);
-
             nextButton.setTextColor(Color.WHITE);
 
-            previousButton.setBackgroundColor(
-                    Color.parseColor("#2E7D32")
-            );
+            previousButton.setBackgroundColor(Color.parseColor("#2E7D32"));
+            nextButton.setBackgroundColor(Color.parseColor("#2E7D32"));
 
-            nextButton.setBackgroundColor(
-                    Color.parseColor("#2E7D32")
-            );
-
-            // Button Layout
             LinearLayout.LayoutParams buttonParams =
-                    new LinearLayout.LayoutParams(
-                            dp(100),
-                            dp(48)
-                    );
+                    new LinearLayout.LayoutParams(dp(100), dp(48));
+            buttonParams.setMargins(dp(8), dp(4), dp(8), dp(4));
 
-            buttonParams.setMargins(
-                    dp(8),
-                    dp(4),
-                    dp(8),
-                    dp(4)
-            );
+            previousButton.setLayoutParams(buttonParams);
+            nextButton.setLayoutParams(buttonParams);
 
-            previousButton.setLayoutParams(
-                    buttonParams
-            );
-
-            nextButton.setLayoutParams(
-                    buttonParams
-            );
-
-            // Navigation-এ Button যোগ
             navigation.addView(previousButton);
-
             navigation.addView(nextButton);
-
-            // Main Layout-এ Navigation যোগ
             mainLayout.addView(navigation);
 
-            // =================================
-            // Dialog সেট করা
-            // =================================
-
+            // Dialog-এ Layout বসানো
             dialog.setContentView(mainLayout);
 
-            // Dialog Window
-            Window window = dialog.getWindow();
-
-            if (window != null) {
-
-                // Background
-                window.setBackgroundDrawableResource(
-                        android.R.color.transparent
-                );
-
-                // Screen Width
-                window.setLayout(
-                        Window.LayoutParams.MATCH_PARENT,
-                        Window.LayoutParams.WRAP_CONTENT
-                );
-            }
-
-            // =================================
-            // Button Click
-            // =================================
-
-            previousButton.setOnClickListener(
-                    new View.OnClickListener() {
-
+            // -------------------------------------
+            // Button Click Listener
+            // -------------------------------------
+            previousButton.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
-
                     PreviousImage();
                 }
             });
 
-            nextButton.setOnClickListener(
-                    new View.OnClickListener() {
-
+            nextButton.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
-
                     NextImage();
                 }
             });
 
-            closeButton.setOnClickListener(
-                    new View.OnClickListener() {
-
+            closeButton.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
-
                     CloseGallery();
                 }
             });
 
-            // =================================
-            // Swipe Gesture
-            // =================================
-
-            imageFrame.setOnTouchListener(
+            // -------------------------------------
+            // Swipe Listener
+            // -------------------------------------
+            View.OnTouchListener swipeListener =
                     new View.OnTouchListener() {
-
                 @Override
-                public boolean onTouch(
-                        View view,
-                        MotionEvent event
-                ) {
-
+                public boolean onTouch(View view, MotionEvent event) {
                     switch (event.getAction()) {
-
                         case MotionEvent.ACTION_DOWN:
-
                             startX = event.getX();
-
                             startY = event.getY();
-
                             return true;
 
                         case MotionEvent.ACTION_UP:
-
                             float endX = event.getX();
-
                             float endY = event.getY();
 
                             float diffX = endX - startX;
-
                             float diffY = endY - startY;
 
-                            // Horizontal Swipe
-                            if (Math.abs(diffX)
-                                    > swipeThreshold
-                                    && Math.abs(diffX)
-                                    > Math.abs(diffY)) {
-
+                            if (Math.abs(diffX) > swipeThreshold
+                                    && Math.abs(diffX) > Math.abs(diffY)) {
                                 if (diffX < 0) {
-
                                     NextImage();
-
                                 } else {
-
                                     PreviousImage();
                                 }
                             }
-
                             return true;
                     }
-
                     return true;
                 }
-            });
+            };
 
-            // Dialog বন্ধ হলে Event
+            imageFrame.setOnTouchListener(swipeListener);
+            imageView.setOnTouchListener(swipeListener);
+
+            // -------------------------------------
+            // Dialog বন্ধ হওয়ার Event
+            // -------------------------------------
             dialog.setOnDismissListener(
-                    new android.content.DialogInterface.OnDismissListener() {
-
+                    new DialogInterface.OnDismissListener() {
                 @Override
-                public void onDismiss(
-                        android.content.DialogInterface dialogInterface
-                ) {
-
+                public void onDismiss(DialogInterface dialogInterface) {
+                    imageRequestId++;
+                    imageView = null;
+                    titleView = null;
+                    counterView = null;
+                    mainLayout = null;
+                    dialog = null;
                     GalleryClosed();
                 }
             });
@@ -587,208 +383,252 @@ public class BondhuGallery
             // Dialog Show
             dialog.show();
 
-            // Dialog Size
-            if (dialog.getWindow() != null) {
-
-                dialog.getWindow().setLayout(
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setBackgroundDrawableResource(
+                        android.R.color.transparent
+                );
+                window.setLayout(
                         Window.LayoutParams.MATCH_PARENT,
                         Window.LayoutParams.WRAP_CONTENT
                 );
             }
 
-            // প্রথম Image Load
+            // প্রথম ছবি Load
             LoadCurrentImage();
 
         } catch (Exception e) {
-
-            ErrorOccurred(
-                "ShowGallery: " + e.getMessage()
-            );
+            ErrorOccurred("ShowGallery: " + getErrorMessage(e));
         }
     }
 
     // =========================================
-    // ৫. Next Image
+    // ৬. পরের ছবি দেখুন
     // =========================================
-
-    @SimpleFunction(
-        description = "Gallery-এর পরের Image দেখুন"
-    )
+    @SimpleFunction(description = "Gallery-এর পরের Image দেখুন")
     public void NextImage() {
-
         if (imageUrls.isEmpty()) {
             return;
         }
 
-        // শেষ Image হলে আবার প্রথম Image
         currentIndex++;
 
         if (currentIndex >= imageUrls.size()) {
-
             currentIndex = 0;
         }
 
-        // Image Load
         LoadCurrentImage();
     }
 
     // =========================================
-    // ৬. Previous Image
+    // ৭. আগের ছবি দেখুন
     // =========================================
-
-    @SimpleFunction(
-        description = "Gallery-এর আগের Image দেখুন"
-    )
+    @SimpleFunction(description = "Gallery-এর আগের Image দেখুন")
     public void PreviousImage() {
-
         if (imageUrls.isEmpty()) {
             return;
         }
 
-        // প্রথম Image হলে শেষ Image
         currentIndex--;
 
         if (currentIndex < 0) {
-
             currentIndex = imageUrls.size() - 1;
         }
 
-        // Image Load
         LoadCurrentImage();
     }
 
     // =========================================
-    // ৭. বর্তমান Image Load
+    // ৮. বর্তমান ছবিটি Download এবং Show করা
     // =========================================
-
     private void LoadCurrentImage() {
-
-        if (imageUrls.isEmpty()) {
+        if (imageUrls.isEmpty() || imageView == null) {
             return;
         }
 
-        // Current URL
-        final String imageUrl =
-                imageUrls.get(currentIndex);
+        final String imageUrl = imageUrls.get(currentIndex);
+        final int requestedIndex = currentIndex;
+        final int requestId = ++imageRequestId;
+        final ImageView targetImageView = imageView;
 
         // Counter Update
         if (counterView != null) {
-
             counterView.setText(
-                    (currentIndex + 1)
-                    + " / "
-                    + imageUrls.size()
+                    (requestedIndex + 1) + " / " + imageUrls.size()
             );
         }
 
-        // Image Download Thread
-        new Thread(
-                new Runnable() {
+        // নতুন ছবি আসা পর্যন্ত আগের ছবি সরানো
+        targetImageView.setImageDrawable(null);
 
+        // Background Thread-এ Internet থেকে ছবি Download
+        new Thread(new Runnable() {
             @Override
             public void run() {
-
                 HttpURLConnection connection = null;
+                Bitmap bitmap = null;
+                String errorMessage = null;
 
                 try {
-
-                    // URL
                     URL url = new URL(imageUrl);
-
-                    // Connection
-                    connection =
-                            (HttpURLConnection)
-                                    url.openConnection();
-
-                    // Timeout
+                    connection = (HttpURLConnection) url.openConnection();
                     connection.setConnectTimeout(15000);
-
                     connection.setReadTimeout(15000);
-
                     connection.setRequestMethod("GET");
-
+                    connection.setDoInput(true);
                     connection.connect();
 
-                    // Bitmap Decode
-                    final Bitmap bitmap =
-                            BitmapFactory.decodeStream(
-                                    connection.getInputStream()
-                            );
+                    int responseCode = connection.getResponseCode();
 
-                    // UI Update
-                    if (imageView != null
-                            && bitmap != null) {
+                    if (responseCode >= 200 && responseCode < 300) {
+                        bitmap = BitmapFactory.decodeStream(
+                                connection.getInputStream()
+                        );
+                    } else {
+                        errorMessage = "HTTP Error: " + responseCode;
+                    }
 
-                        imageView.post(
-                                new Runnable() {
-
-                            @Override
-                            public void run() {
-
-                                if (imageView != null) {
-
-                                    imageView.setImageBitmap(
-                                            bitmap
-                                    );
-
-                                    ImageChanged(
-                                            currentIndex + 1,
-                                            imageUrls.size()
-                                    );
-                                }
-                            }
-                        });
+                    if (bitmap == null && errorMessage == null) {
+                        errorMessage = "ছবিটি Decode করা যায়নি";
                     }
 
                 } catch (Exception e) {
-
-                    ErrorOccurred(
-                            "LoadCurrentImage: "
-                            + e.getMessage()
-                    );
+                    errorMessage = getErrorMessage(e);
 
                 } finally {
-
                     if (connection != null) {
-
                         connection.disconnect();
                     }
                 }
-            }
 
+                final Bitmap finalBitmap = bitmap;
+                final String finalError = errorMessage;
+
+                // Main/UI Thread-এ Result দেখানো
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        // এর মধ্যে নতুন Request এলে পুরনো Result বাদ
+                        if (requestId != imageRequestId
+                                || imageView != targetImageView
+                                || dialog == null
+                                || !dialog.isShowing()) {
+                            return;
+                        }
+
+                        if (finalBitmap != null) {
+                            targetImageView.setImageBitmap(finalBitmap);
+
+                            ImageChanged(
+                                    requestedIndex + 1,
+                                    imageUrls.size()
+                            );
+                        } else {
+                            ErrorOccurred(
+                                    "LoadCurrentImage: " + finalError
+                            );
+                        }
+                    }
+                });
+            }
         }).start();
     }
 
     // =========================================
-    // ৮. Gallery বন্ধ করা
+    // ৯. Gallery বন্ধ করা
     // =========================================
-
-    @SimpleFunction(
-        description = "Gallery Dialog বন্ধ করুন"
-    )
+    @SimpleFunction(description = "Gallery Dialog বন্ধ করুন")
     public void CloseGallery() {
+        // চলমান Download-এর পুরনো Result আর দেখানো হবে না
+        imageRequestId++;
 
-        if (dialog != null
-                && dialog.isShowing()) {
-
+        if (dialog != null && dialog.isShowing()) {
             dialog.dismiss();
+        } else {
+            dialog = null;
+            imageView = null;
+            titleView = null;
+            counterView = null;
+            mainLayout = null;
         }
-
-        dialog = null;
-
-        imageView = null;
-
-        titleView = null;
-
-        counterView = null;
     }
 
     // =========================================
-    // ৯. Image Changed Event
+    // ১০. মোট ছবির সংখ্যা জানুন
     // =========================================
+    @SimpleFunction(description = "Gallery-তে মোট কতগুলি ছবি আছে তা জানুন")
+    public int GetImageCount() {
+        return imageUrls.size();
+    }
 
-    @SimpleEvent(
-        description = "Image পরিবর্তন হলে Event চালু হবে"
-    )
-    public void ImageChanged(
-            int imageNum
+    // =========================================
+    // ১১. বর্তমান ছবির নম্বর জানুন
+    // =========================================
+    @SimpleFunction(description = "বর্তমানে কোন নম্বর ছবি দেখা হচ্ছে তা জানুন")
+    public int GetCurrentImageNumber() {
+        return currentIndex + 1;
+    }
+
+    // =========================================
+    // ১২. Image Changed Event
+    // =========================================
+    @SimpleEvent(description = "Image পরিবর্তন হলে Event চালু হবে")
+    public void ImageChanged(int imageNum, int totalImages) {
+        EventDispatcher.dispatchEvent(
+                this,
+                "ImageChanged",
+                imageNum,
+                totalImages
+        );
+    }
+
+    // =========================================
+    // ১৩. Gallery Closed Event
+    // =========================================
+    @SimpleEvent(description = "Gallery বন্ধ হলে Event চালু হবে")
+    public void GalleryClosed() {
+        EventDispatcher.dispatchEvent(
+                this,
+                "GalleryClosed"
+        );
+    }
+
+    // =========================================
+    // ১৪. Error Event
+    // =========================================
+    @SimpleEvent(description = "কোনো Error হলে Event চালু হবে")
+    public void ErrorOccurred(String message) {
+        EventDispatcher.dispatchEvent(
+                this,
+                "ErrorOccurred",
+                message
+        );
+    }
+
+    // =========================================
+    // ১৫. DP-কে Pixel-এ Convert করা
+    // =========================================
+    private int dp(float value) {
+        return (int) (
+                value * context.getResources()
+                        .getDisplayMetrics().density + 0.5f
+        );
+    }
+
+    // =========================================
+    // ১৬. Exception-এর Message নেওয়া
+    // =========================================
+    private String getErrorMessage(Exception e) {
+        if (e == null) {
+            return "Unknown error";
+        }
+
+        String message = e.getMessage();
+
+        if (message == null || message.trim().isEmpty()) {
+            return e.getClass().getSimpleName();
+        }
+
+        return message;
+    }
+}
