@@ -44,8 +44,7 @@ import com.google.appinventor.components.runtime.EventDispatcher;
 import com.google.appinventor.components.runtime.util.YailList;
 
 @Extension(
-    description = "Bondhu Bazar Product Image Gallery",
-    version = 1
+    description = "Bondhu Bazar Product Image Gallery"
 )
 public class BondhuGallery extends AndroidNonvisibleComponent {
 
